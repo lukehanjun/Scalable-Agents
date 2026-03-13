@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: agentic-hierarchy
+Version: 0.1.0
+Summary: Budget-aware evolutionary search for agentic workflow graphs.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0.0,>=0.116.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: uvicorn[standard]<1.0.0,>=0.35.0
+
 # Agentic Hierarchy Lab
 
 Agentic Hierarchy Lab is a starter framework for searching over bounded multi-agent workflow graphs under real production constraints. It focuses on one practical question: what agent hierarchy delivers the best quality under a budget such as `<= 2,000 tokens`, `<= 10 seconds`, or `>= 85%` expected success at minimum cost?

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agentic Hierarchy Lab</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">SWE-bench Live Runner</p>
+          <h1>Search the graph, run the graph, compare it to a real baseline.</h1>
+          <p class="lede">
+            This UI now centers on one flow: choose a SWE-bench JSONL subset, evolve an agent graph,
+            replay the mutation history, and then inspect the real API-backed patch results for the
+            evolved workflow and the single-agent baseline.
+          </p>
+        </div>
+        <div class="hero-card">
+          <div class="metric">
+            <span>Main run</span>
+            <strong>Live SWE-bench execution</strong>
+          </div>
+          <div class="metric">
+            <span>Selection</span>
+            <strong>Surrogate-guided graph search</strong>
+          </div>
+          <div class="metric">
+            <span>Final evaluation</span>
+            <strong>Real OpenAI patch generation</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel grid">
+        <form id="benchmark-form" class="controls">
+          <div class="double">
+            <label>
+              <span>Tasks JSONL</span>
+              <input id="tasksPath" type="text" placeholder="C:\data\swebench_lite_subset.jsonl" />
+            </label>
+            <label>
+              <span>Repo Root</span>
+              <input id="repoRoot" type="text" placeholder="C:\repos\swebench" />
+            </label>
+          </div>
+
+          <div class="quad">
+            <label>
+              <span>Model</span>
+              <input id="modelName" type="text" value="gpt-5-mini" />
+            </label>
+            <label>
+              <span>Limit</span>
+              <input id="benchmarkLimit" type="number" value="1" min="1" max="100" />
+            </label>
+            <label>
+              <span>Population</span>
+              <input id="populationSize" type="number" value="8" min="4" max="64" />
+            </label>
+            <label>
+              <span>Generations</span>
+              <input id="generations" type="number" value="4" min="2" max="30" />
+            </label>
+          </div>
+
+          <div class="quad">
+            <label>
+              <span>Trials</span>
+              <input id="trials" type="number" value="2" min="1" max="8" />
+            </label>
+            <label>
+              <span>Max Tokens</span>
+              <input id="maxTokens" type="number" value="2000" min="200" step="100" />
+            </label>
+            <label>
+              <span>Max Latency (ms)</span>
+              <input id="maxLatency" type="number" value="10000" min="1000" step="500" />
+            </label>
+            <label>
+              <span>GPU Count</span>
+              <input id="gpuCount" type="number" value="1" min="0" max="32" />
+            </label>
+          </div>
+
+          <div class="hint-block">
+            <span>What run means</span>
+            <p>
+              The mutation search is still fast surrogate-guided. After that, the evolved graph and the
+              single-agent baseline both execute with real OpenAI API calls and produce real patch artifacts.
+            </p>
+          </div>
+
+          <div class="button-row">
+            <button type="submit" id="runButton">Run SWE-bench Live</button>
+          </div>
+        </form>
+
+        <aside class="results">
+          <div class="results-header">
+            <h2>Run Summary</h2>
+            <span id="statusPill" class="status idle">Idle</span>
+          </div>
+          <div id="summaryCards" class="summary-cards"></div>
+          <div class="baseline-box">
+            <h3>Case Selector</h3>
+            <div id="caseList" class="comparison"></div>
+          </div>
+          <div class="baseline-box">
+            <h3>Benchmark Output</h3>
+            <div id="benchmarkSummary" class="comparison"></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="panel visualization">
+        <div class="viz-header">
+          <div>
+            <p class="eyebrow">Graph Playback</p>
+            <h2 id="graphSectionTitle">Mutation history</h2>
+          </div>
+          <div class="toggle-row">
+            <button class="toggle active" data-mode="full">Full Trace</button>
+            <button class="toggle" data-mode="condensed">20-30 Step Reel</button>
+          </div>
+        </div>
+
+        <div class="viz-grid">
+          <div class="graph-card">
+            <div class="graph-toolbar">
+              <span id="eventTitle">No evolution loaded</span>
+              <button id="playButton" type="button">Play</button>
+            </div>
+            <svg id="graphCanvas" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet"></svg>
+          </div>
+
+          <div class="timeline-card">
+            <div class="timeline-head">
+              <h3>Events</h3>
+              <span id="eventCount">0</span>
+            </div>
+            <div id="eventList" class="event-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel benchmark-panel">
+        <div class="viz-header">
+          <div>
+            <p class="eyebrow">Real Evaluation</p>
+            <h2 id="caseTitle">No case selected</h2>
+          </div>
+        </div>
+
+        <div class="results-grid">
+          <div class="result-card">
+            <h3>Evolved Workflow</h3>
+            <div id="evolvedMetrics" class="comparison"></div>
+            <pre id="evolvedPatch" class="patch-view">Run a benchmark to see the evolved patch.</pre>
+            <div id="evolvedTrace" class="trace-list"></div>
+          </div>
+          <div class="result-card">
+            <h3>Single-Agent Baseline</h3>
+            <div id="baselineMetrics" class="comparison"></div>
+            <pre id="baselinePatch" class="patch-view">Run a benchmark to see the baseline patch.</pre>
+            <div id="baselineTrace" class="trace-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
