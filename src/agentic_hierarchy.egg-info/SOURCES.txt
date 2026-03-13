@@ -14,6 +14,7 @@ src/agentic_hierarchy/parallel.py
 src/agentic_hierarchy/profiler.py
 src/agentic_hierarchy/repo_tools.py
 src/agentic_hierarchy/search.py
+src/agentic_hierarchy/swebench_auto.py
 src/agentic_hierarchy/utils.py
 src/agentic_hierarchy.egg-info/PKG-INFO
 src/agentic_hierarchy.egg-info/SOURCES.txt

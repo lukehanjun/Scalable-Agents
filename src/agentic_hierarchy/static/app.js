@@ -28,6 +28,21 @@ const graphCanvas = document.getElementById("graphCanvas");
 const playButton = document.getElementById("playButton");
 const toggles = document.querySelectorAll(".toggle");
 
+function readTextInput(id, fallback = "") {
+  const element = document.getElementById(id);
+  if (!element) {
+    console.warn(`Missing input #${id}; using fallback value.`);
+    return fallback;
+  }
+  return element.value ?? fallback;
+}
+
+function readNumberInput(id, fallback = 0) {
+  const raw = readTextInput(id, String(fallback));
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   stopPlayback();
@@ -97,21 +112,21 @@ toggles.forEach((toggle) => {
 
 function buildBenchmarkPayload() {
   return {
-    tasks_path: document.getElementById("tasksPath").value,
-    repo_root: document.getElementById("repoRoot").value || null,
-    model_name: document.getElementById("modelName").value,
+    question_count: readNumberInput("questionCount", 50),
+    model_name: readTextInput("modelName", "gpt-5-mini"),
     output_dir: "artifacts/live-benchmark",
-    dataset_name: "princeton-nlp/SWE-bench_Lite",
-    limit: Number(document.getElementById("benchmarkLimit").value),
+    dataset_name: readTextInput("datasetName", "princeton-nlp/SWE-bench_Lite"),
+    dataset_split: "test",
+    harness_max_workers: readNumberInput("harnessWorkers", 4),
     budget: {
-      max_tokens: Number(document.getElementById("maxTokens").value),
-      max_latency_ms: Number(document.getElementById("maxLatency").value),
+      max_tokens: readNumberInput("maxTokens", 2000),
+      max_latency_ms: readNumberInput("maxLatency", 10000),
       max_cost: 4.0,
     },
     search: {
-      population_size: Number(document.getElementById("populationSize").value),
-      generations: Number(document.getElementById("generations").value),
-      trials: Number(document.getElementById("trials").value),
+      population_size: readNumberInput("populationSize", 8),
+      generations: readNumberInput("generations", 4),
+      trials: readNumberInput("trials", 2),
       mutation_rate: 0.72,
       crossover_rate: 0.28,
       elitism: 4,
@@ -120,7 +135,7 @@ function buildBenchmarkPayload() {
       random_seed: 7,
     },
     hardware: {
-      gpu_count: Number(document.getElementById("gpuCount").value),
+      gpu_count: readNumberInput("gpuCount", 1),
       cpu_cores: 8,
       per_gpu_concurrency: 4,
       interconnect: "nvlink-or-pcie",
@@ -167,6 +182,8 @@ function renderBenchmark() {
 
 function renderSummary() {
   const summary = state.benchmark;
+  const evolvedAccuracy = summary.evolved_accuracy == null ? "N/A" : `${(summary.evolved_accuracy * 100).toFixed(2)}%`;
+  const baselineAccuracy = summary.baseline_accuracy == null ? "N/A" : `${(summary.baseline_accuracy * 100).toFixed(2)}%`;
   summaryCards.innerHTML = `
     <div class="summary-card">
       <span>Task count</span>
@@ -179,6 +196,14 @@ function renderSummary() {
     <div class="summary-card">
       <span>Baseline non-empty patches</span>
       <strong>${summary.baseline_nonempty_patches}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Evolved accuracy</span>
+      <strong>${evolvedAccuracy}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Baseline accuracy</span>
+      <strong>${baselineAccuracy}</strong>
     </div>
   `;
   benchmarkSummary.innerHTML = `
@@ -194,6 +219,11 @@ function renderSummary() {
       <span>Harness command</span>
       <strong>${summary.harness_command_evolved}</strong>
     </div>
+    ${
+      summary.harness_error
+        ? `<div class="comparison-row"><span>Harness error</span><strong>${summary.harness_error}</strong></div>`
+        : ""
+    }
   `;
 }
 
@@ -233,8 +263,22 @@ function renderSelectedCase() {
 
   const evolved = detail.evolved_execution;
   const baseline = detail.baseline_execution;
-  evolvedMetrics.innerHTML = metricRows(evolved, detail.artifact_paths.evolved_patch);
-  baselineMetrics.innerHTML = metricRows(baseline, detail.artifact_paths.baseline_patch);
+  evolvedMetrics.innerHTML = metricRows(
+    {
+      ...evolved,
+      resolved: detail.evolved_resolved,
+      patch_similarity: detail.evolved_patch_similarity,
+    },
+    detail.artifact_paths.evolved_patch
+  );
+  baselineMetrics.innerHTML = metricRows(
+    {
+      ...baseline,
+      resolved: detail.baseline_resolved,
+      patch_similarity: detail.baseline_patch_similarity,
+    },
+    detail.artifact_paths.baseline_patch
+  );
   evolvedPatch.textContent = evolved.final_patch || "No unified diff patch was extracted.";
   baselinePatch.textContent = baseline.final_patch || "No unified diff patch was extracted.";
   evolvedTrace.innerHTML = traceMarkup(evolved.trace);
@@ -242,6 +286,10 @@ function renderSelectedCase() {
 }
 
 function metricRows(execution, patchPath) {
+  const resolvedBadge =
+    execution.resolved == null ? "N/A" : execution.resolved ? "Resolved" : "Unresolved";
+  const similarity =
+    execution.patch_similarity == null ? "N/A" : `${(execution.patch_similarity * 100).toFixed(2)}%`;
   return `
     <div class="comparison-row">
       <span>Patch bytes</span>
@@ -258,6 +306,14 @@ function metricRows(execution, patchPath) {
     <div class="comparison-row">
       <span>Artifact</span>
       <strong>${patchPath}</strong>
+    </div>
+    <div class="comparison-row">
+      <span>Harness status</span>
+      <strong>${resolvedBadge}</strong>
+    </div>
+    <div class="comparison-row">
+      <span>Patch similarity to reference</span>
+      <strong>${similarity}</strong>
     </div>
   `;
 }

@@ -5,6 +5,7 @@ from .benchmarks import (
     export_swebench_predictions,
     load_jsonl_tasks,
     run_live_benchmark,
+    run_live_benchmark_auto,
     run_surrogate_benchmark,
     swebench_eval_command,
 )
@@ -45,6 +46,7 @@ __all__ = [
     "OpenAIResponsesClient",
     "ParallelEvaluationRuntime",
     "run_live_benchmark",
+    "run_live_benchmark_auto",
     "run_surrogate_benchmark",
     "SearchConfig",
     "SearchRun",

@@ -217,6 +217,10 @@ class LiveBenchmarkCaseResult:
     baseline_output_tokens: int
     evolved_patch_path: str
     baseline_patch_path: str
+    evolved_patch_similarity: float | None = None
+    baseline_patch_similarity: float | None = None
+    evolved_resolved: bool | None = None
+    baseline_resolved: bool | None = None
 
 
 @dataclass
@@ -234,4 +238,11 @@ class LiveBenchmarkSummary:
     harness_command_evolved: str
     harness_command_baseline: str
     case_results: list[LiveBenchmarkCaseResult]
+    evolved_accuracy: float | None = None
+    baseline_accuracy: float | None = None
+    evolved_resolved: int | None = None
+    baseline_resolved: int | None = None
+    evolved_harness_results_path: str | None = None
+    baseline_harness_results_path: str | None = None
+    harness_error: str | None = None
     case_details: list[dict[str, Any]] = field(default_factory=list)

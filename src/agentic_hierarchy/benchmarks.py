@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
+from uuid import uuid4
 
 from .executor import LiveGraphExecutor
 from .grammar import GraphFactory
@@ -17,6 +20,12 @@ from .models import (
 )
 from .repo_tools import resolve_repo_path
 from .search import EvolutionarySearch
+from .swebench_auto import (
+    ensure_swebench_harness,
+    load_swebench_tasks,
+    prepare_task_repositories,
+    run_harness_evaluation,
+)
 
 
 @dataclass
@@ -26,6 +35,7 @@ class BenchmarkTask:
     repo: str = ""
     repo_path: str | None = None
     base_commit: str | None = None
+    reference_patch: str | None = None
 
 
 @dataclass
@@ -52,6 +62,7 @@ def load_jsonl_tasks(path: str | Path, limit: int | None = None) -> list[Benchma
                     repo=record.get("repo", ""),
                     repo_path=record.get("repo_path"),
                     base_commit=record.get("base_commit"),
+                    reference_patch=record.get("patch") or record.get("reference_patch"),
                 )
             )
     return tasks
@@ -139,6 +150,9 @@ def run_live_benchmark(
     repo_root: str | None,
     output_dir: str | Path,
     dataset_name: str = "princeton-nlp/SWE-bench_Lite",
+    swebench_repo_dir: str | Path | None = None,
+    run_harness: bool = True,
+    harness_max_workers: int = 4,
 ) -> LiveBenchmarkSummary:
     search = EvolutionarySearch(factory=GraphFactory(seed=config.random_seed))
     executor = LiveGraphExecutor(llm=OpenAIResponsesClient(model_name=model_name))
@@ -155,6 +169,8 @@ def run_live_benchmark(
     evolved_output_tokens = 0
     baseline_output_tokens = 0
     case_details: list[dict] = []
+    instance_ids = [task.instance_id for task in tasks]
+    case_lookup: dict[str, LiveBenchmarkCaseResult] = {}
 
     for task in tasks:
         repo_path = resolve_repo_path(task.repo_path, repo_root, task.repo)
@@ -214,8 +230,11 @@ def run_live_benchmark(
                 baseline_output_tokens=baseline.total_output_tokens,
                 evolved_patch_path=str(output_dir / f"{task.instance_id}.evolved.patch"),
                 baseline_patch_path=str(output_dir / f"{task.instance_id}.baseline.patch"),
+                evolved_patch_similarity=_patch_similarity(evolved_patch, task.reference_patch),
+                baseline_patch_similarity=_patch_similarity(baseline_patch, task.reference_patch),
             )
         )
+        case_lookup[task.instance_id] = case_results[-1]
         search_run_path = output_dir / f"{task.instance_id}.search_run.json"
         evolved_execution_path = output_dir / f"{task.instance_id}.evolved_execution.json"
         baseline_execution_path = output_dir / f"{task.instance_id}.baseline_execution.json"
@@ -229,6 +248,7 @@ def run_live_benchmark(
                 "instance_id": task.instance_id,
                 "repo": task.repo,
                 "repo_path": repo_path,
+                "reference_patch_preview": (task.reference_patch or "")[:1000],
                 "artifact_paths": {
                     "search_run": str(search_run_path),
                     "evolved_execution": str(evolved_execution_path),
@@ -251,6 +271,50 @@ def run_live_benchmark(
         predictions=baseline_predictions,
     )
     task_count = len(tasks)
+    evolved_accuracy: float | None = None
+    baseline_accuracy: float | None = None
+    evolved_resolved: int | None = None
+    baseline_resolved: int | None = None
+    evolved_harness_results_path: str | None = None
+    baseline_harness_results_path: str | None = None
+    harness_error: str | None = None
+
+    if run_harness and swebench_repo_dir:
+        try:
+            run_suffix = uuid4().hex[:8]
+            evolved_eval = run_harness_evaluation(
+                dataset_name=dataset_name,
+                predictions_path=evolved_predictions_path,
+                run_id=f"evolved-graph-run-{run_suffix}",
+                max_workers=max(1, harness_max_workers),
+                instance_ids=instance_ids,
+                swebench_repo=swebench_repo_dir,
+                output_root=output_dir,
+            )
+            baseline_eval = run_harness_evaluation(
+                dataset_name=dataset_name,
+                predictions_path=baseline_predictions_path,
+                run_id=f"single-agent-baseline-run-{run_suffix}",
+                max_workers=max(1, harness_max_workers),
+                instance_ids=instance_ids,
+                swebench_repo=swebench_repo_dir,
+                output_root=output_dir,
+            )
+            evolved_accuracy = evolved_eval.accuracy
+            baseline_accuracy = baseline_eval.accuracy
+            evolved_resolved = evolved_eval.resolved_count
+            baseline_resolved = baseline_eval.resolved_count
+            evolved_harness_results_path = evolved_eval.results_path
+            baseline_harness_results_path = baseline_eval.results_path
+
+            evolved_resolved_ids = set(evolved_eval.resolved_ids)
+            baseline_resolved_ids = set(baseline_eval.resolved_ids)
+            for instance_id, case in case_lookup.items():
+                case.evolved_resolved = instance_id in evolved_resolved_ids
+                case.baseline_resolved = instance_id in baseline_resolved_ids
+        except RuntimeError as exc:
+            harness_error = str(exc)
+
     return LiveBenchmarkSummary(
         task_count=task_count,
         model_name=model_name,
@@ -272,6 +336,63 @@ def run_live_benchmark(
             run_id="single-agent-baseline-run",
             dataset_name=dataset_name,
         ),
+        evolved_accuracy=evolved_accuracy,
+        baseline_accuracy=baseline_accuracy,
+        evolved_resolved=evolved_resolved,
+        baseline_resolved=baseline_resolved,
+        evolved_harness_results_path=evolved_harness_results_path,
+        baseline_harness_results_path=baseline_harness_results_path,
+        harness_error=harness_error,
         case_results=case_results,
         case_details=case_details,
     )
+
+
+def run_live_benchmark_auto(
+    *,
+    workspace_root: str | Path,
+    question_count: int,
+    budget: BudgetConstraints,
+    config: SearchConfig,
+    hardware: HardwareProfile,
+    model_name: str,
+    output_dir: str | Path,
+    dataset_name: str = "princeton-nlp/SWE-bench_Lite",
+    dataset_split: str = "test",
+    harness_max_workers: int = 4,
+) -> LiveBenchmarkSummary:
+    workspace_root = Path(workspace_root)
+    swebench_repo_dir = ensure_swebench_harness(workspace_root=workspace_root, install_if_missing=True)
+    cache_override = os.getenv("SWEBENCH_DATASET_CACHE")
+    tasks_cache_dir = Path(cache_override) if cache_override else (workspace_root / ".hf")
+    repos_root = workspace_root / "external" / "swebench_repos"
+    loaded = load_swebench_tasks(
+        dataset_name=dataset_name,
+        split=dataset_split,
+        limit=question_count,
+        cache_dir=tasks_cache_dir,
+        seed=config.random_seed,
+    )
+    tasks = [BenchmarkTask(**record) for record in loaded]
+    prepare_task_repositories(tasks=tasks, repos_root=repos_root)
+    return run_live_benchmark(
+        tasks=tasks,
+        budget=budget,
+        config=config,
+        hardware=hardware,
+        model_name=model_name,
+        repo_root=str(repos_root),
+        output_dir=output_dir,
+        dataset_name=dataset_name,
+        swebench_repo_dir=swebench_repo_dir,
+        run_harness=True,
+        harness_max_workers=harness_max_workers,
+    )
+
+
+def _patch_similarity(candidate: str, reference: str | None) -> float | None:
+    if not reference:
+        return None
+    if not candidate:
+        return 0.0
+    return round(SequenceMatcher(a=candidate, b=reference).ratio(), 4)

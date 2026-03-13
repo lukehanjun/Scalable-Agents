@@ -15,7 +15,7 @@
           <p class="eyebrow">SWE-bench Live Runner</p>
           <h1>Search the graph, run the graph, compare it to a real baseline.</h1>
           <p class="lede">
-            This UI now centers on one flow: choose a SWE-bench JSONL subset, evolve an agent graph,
+            This UI now centers on one flow: choose how many SWE-bench tasks to run, evolve an agent graph,
             replay the mutation history, and then inspect the real API-backed patch results for the
             evolved workflow and the single-agent baseline.
           </p>
@@ -38,26 +38,26 @@
 
       <section class="panel grid">
         <form id="benchmark-form" class="controls">
-          <div class="double">
-            <label>
-              <span>Tasks JSONL</span>
-              <input id="tasksPath" type="text" placeholder="C:\data\swebench_lite_subset.jsonl" />
-            </label>
-            <label>
-              <span>Repo Root</span>
-              <input id="repoRoot" type="text" placeholder="C:\repos\swebench" />
-            </label>
-          </div>
-
           <div class="quad">
             <label>
               <span>Model</span>
               <input id="modelName" type="text" value="gpt-5-mini" />
             </label>
             <label>
-              <span>Limit</span>
-              <input id="benchmarkLimit" type="number" value="1" min="1" max="100" />
+              <span>Question Count</span>
+              <input id="questionCount" type="number" value="50" min="1" max="200" />
             </label>
+            <label>
+              <span>Dataset</span>
+              <input id="datasetName" type="text" value="princeton-nlp/SWE-bench_Lite" />
+            </label>
+            <label>
+              <span>Harness Workers</span>
+              <input id="harnessWorkers" type="number" value="4" min="1" max="32" />
+            </label>
+          </div>
+
+          <div class="quad">
             <label>
               <span>Population</span>
               <input id="populationSize" type="number" value="8" min="4" max="64" />
@@ -66,9 +66,6 @@
               <span>Generations</span>
               <input id="generations" type="number" value="4" min="2" max="30" />
             </label>
-          </div>
-
-          <div class="quad">
             <label>
               <span>Trials</span>
               <input id="trials" type="number" value="2" min="1" max="8" />
@@ -90,8 +87,9 @@
           <div class="hint-block">
             <span>What run means</span>
             <p>
-              The mutation search is still fast surrogate-guided. After that, the evolved graph and the
-              single-agent baseline both execute with real OpenAI API calls and produce real patch artifacts.
+              The app auto-downloads SWE-bench and task repos in this project folder. Mutation search is still
+              fast surrogate-guided. After selection, evolved and baseline workflows execute with real OpenAI API calls,
+              then SWE-bench harness computes resolved accuracy.
             </p>
           </div>
 
@@ -173,6 +171,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260313-1"></script>
   </body>
 </html>

@@ -22,7 +22,7 @@ SWE-bench describes itself as a benchmark for evaluating models on real-world Gi
 This repository does not bundle SWE-bench itself. Instead, it provides:
 
 - A surrogate benchmarking mode for fast local graph search over issue text.
-- A live benchmark mode that executes the evolved graph and a real single-agent baseline with an LLM, producing actual `model_patch` predictions.
+- A self-contained live benchmark mode that auto-downloads SWE-bench + task repos, executes the evolved graph and a real single-agent baseline with an LLM, and then computes resolved accuracy via the SWE-bench harness.
 - A prediction export path compatible with the official SWE-bench harness.
 
 ## Architecture
@@ -73,11 +73,11 @@ python -m agentic_hierarchy --task "Fix a flaky multi-file bug in a Python repo"
 
 ## Benchmark Flow
 
-1. Load a local SWE-bench JSONL task file or issue subset.
-2. Search for an evolved graph using the bounded grammar.
-3. Execute that graph and a real single-agent baseline through the OpenAI Responses API.
-4. Export predictions to JSONL.
-5. Run the official SWE-bench harness.
+1. Select question count in the web UI (default `50`).
+2. The app auto-downloads SWE-bench and loads a task subset.
+3. It searches for an evolved graph using the bounded grammar.
+4. It executes evolved + single-agent baseline through the OpenAI Responses API.
+5. It runs the SWE-bench harness and reports resolved accuracy.
 
 Example benchmark command generation:
 
@@ -94,18 +94,19 @@ command = swebench_eval_command(
 print(command)
 ```
 
-## Live Benchmark CLI
+## Live Benchmark CLI (Self-Contained)
 
 ```powershell
 python -m agentic_hierarchy `
   --task "placeholder" `
-  --live-tasks-path data\swebench_lite_subset.jsonl `
-  --repo-root C:\repos\swebench `
+  --live-auto `
+  --question-count 50 `
   --model gpt-5-mini `
   --output-dir artifacts\live-benchmark `
   --population-size 12 `
   --generations 5 `
-  --trials 2
+  --trials 2 `
+  --harness-workers 4
 ```
 
 Task records can include:
@@ -122,11 +123,13 @@ The runner writes:
 - per-instance baseline patches
 - `evolved_predictions.jsonl`
 - `baseline_predictions.jsonl`
+- per-instance `*.search_run.json`, `*.evolved_execution.json`, `*.baseline_execution.json`
+- SWE-bench harness `results.json` files (when harness succeeds)
 
 ## Notes
 
-- Search is still guided by the surrogate evaluator, but execution and exported predictions are now real LLM outputs.
+- Search is still guided by the surrogate evaluator, but execution and benchmark scoring are real.
 - For best SWE-bench results, supply local repo checkouts that match the benchmark task repositories.
-- Official pass/fail scoring still happens in the SWE-bench Docker harness, not inside this repo.
+- Official pass/fail scoring is run by SWE-bench Docker harness, triggered from this repo's live benchmark pipeline.
 - The parallel runtime is designed for real external-model inference workloads, where threads mostly coordinate remote calls or GPU workers instead of doing heavy Python-only compute.
 - The UI intentionally shows both the full mutation history and a condensed evolution reel so long searches stay readable.

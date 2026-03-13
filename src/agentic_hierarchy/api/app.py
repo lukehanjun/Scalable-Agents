@@ -9,7 +9,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from ..benchmarks import load_jsonl_tasks, run_live_benchmark, run_surrogate_benchmark
+from ..benchmarks import (
+    load_jsonl_tasks,
+    run_live_benchmark_auto,
+    run_surrogate_benchmark,
+)
 from ..executor import LiveGraphExecutor
 from ..evaluator import GraphEvaluator
 from ..grammar import GraphFactory
@@ -69,12 +73,12 @@ class LiveTaskRequest(BaseModel):
 
 
 class LiveBenchmarkRequest(BaseModel):
-    tasks_path: str
-    repo_root: str | None = None
+    question_count: int = Field(default=50, ge=1, le=500)
     model_name: str = "gpt-5-mini"
     output_dir: str = "artifacts/live-benchmark"
     dataset_name: str = "princeton-nlp/SWE-bench_Lite"
-    limit: int = 8
+    dataset_split: str = "test"
+    harness_max_workers: int = Field(default=4, ge=1, le=64)
     budget: BudgetPayload = Field(default_factory=BudgetPayload)
     search: SearchPayload = Field(default_factory=SearchPayload)
     hardware: HardwarePayload = Field(default_factory=HardwarePayload)
@@ -158,27 +162,22 @@ def execute_live(payload: LiveTaskRequest) -> dict:
 
 @app.post("/api/benchmark/run-live")
 def run_live_benchmark_api(payload: LiveBenchmarkRequest) -> dict:
-    tasks_path = Path(payload.tasks_path).expanduser()
-    if not payload.tasks_path.strip():
-        raise HTTPException(status_code=400, detail="Tasks JSONL path is required.")
-    if not tasks_path.exists():
-        raise HTTPException(status_code=400, detail=f"Tasks JSONL file was not found: {tasks_path}")
-    if tasks_path.is_dir():
-        raise HTTPException(status_code=400, detail=f"Tasks JSONL path points to a directory, not a file: {tasks_path}")
-    if tasks_path.suffix.lower() != ".jsonl":
-        raise HTTPException(status_code=400, detail=f"Tasks path must be a .jsonl file: {tasks_path}")
-
-    tasks = load_jsonl_tasks(payload.tasks_path, limit=payload.limit)
-    summary = run_live_benchmark(
-        tasks=tasks,
-        budget=BudgetConstraints(**payload.budget.model_dump()),
-        config=SearchConfig(**payload.search.model_dump()),
-        hardware=HardwareProfile(**payload.hardware.model_dump()),
-        model_name=payload.model_name,
-        repo_root=payload.repo_root,
-        output_dir=payload.output_dir,
-        dataset_name=payload.dataset_name,
-    )
+    workspace_root = Path(__file__).resolve().parents[3]
+    try:
+        summary = run_live_benchmark_auto(
+            workspace_root=workspace_root,
+            question_count=payload.question_count,
+            budget=BudgetConstraints(**payload.budget.model_dump()),
+            config=SearchConfig(**payload.search.model_dump()),
+            hardware=HardwareProfile(**payload.hardware.model_dump()),
+            model_name=payload.model_name,
+            output_dir=payload.output_dir,
+            dataset_name=payload.dataset_name,
+            dataset_split=payload.dataset_split,
+            harness_max_workers=payload.harness_max_workers,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return asdict(summary)
 
 
