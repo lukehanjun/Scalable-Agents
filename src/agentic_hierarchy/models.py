@@ -245,4 +245,11 @@ class LiveBenchmarkSummary:
     evolved_harness_results_path: str | None = None
     baseline_harness_results_path: str | None = None
     harness_error: str | None = None
+    harness_supported: bool = True
+    evaluation_mode: str = "swebench_harness"
+    harness_unavailable_reason: str | None = None
+    evolved_reference_exact_match_rate: float | None = None
+    baseline_reference_exact_match_rate: float | None = None
+    evolved_avg_patch_similarity: float | None = None
+    baseline_avg_patch_similarity: float | None = None
     case_details: list[dict[str, Any]] = field(default_factory=list)

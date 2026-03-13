@@ -278,6 +278,36 @@ def run_live_benchmark(
     evolved_harness_results_path: str | None = None
     baseline_harness_results_path: str | None = None
     harness_error: str | None = None
+    harness_supported = True
+    evaluation_mode = "swebench_harness"
+    harness_unavailable_reason: str | None = None
+
+    evolved_similarity_values = [
+        case.evolved_patch_similarity for case in case_results if case.evolved_patch_similarity is not None
+    ]
+    baseline_similarity_values = [
+        case.baseline_patch_similarity for case in case_results if case.baseline_patch_similarity is not None
+    ]
+    evolved_avg_patch_similarity = (
+        round(sum(evolved_similarity_values) / len(evolved_similarity_values), 4)
+        if evolved_similarity_values
+        else None
+    )
+    baseline_avg_patch_similarity = (
+        round(sum(baseline_similarity_values) / len(baseline_similarity_values), 4)
+        if baseline_similarity_values
+        else None
+    )
+    evolved_reference_exact_match_rate = (
+        round(sum(1 for value in evolved_similarity_values if value >= 1.0) / len(evolved_similarity_values), 4)
+        if evolved_similarity_values
+        else None
+    )
+    baseline_reference_exact_match_rate = (
+        round(sum(1 for value in baseline_similarity_values if value >= 1.0) / len(baseline_similarity_values), 4)
+        if baseline_similarity_values
+        else None
+    )
 
     if run_harness and swebench_repo_dir:
         try:
@@ -314,6 +344,13 @@ def run_live_benchmark(
                 case.baseline_resolved = instance_id in baseline_resolved_ids
         except RuntimeError as exc:
             harness_error = str(exc)
+            if "not supported on native windows" in harness_error.lower():
+                harness_supported = False
+                evaluation_mode = "proxy_reference_patch"
+                harness_unavailable_reason = (
+                    "Official SWE-bench harness is unavailable on native Windows Python. "
+                    "Use WSL2/Linux or Docker for official resolved accuracy."
+                )
 
     return LiveBenchmarkSummary(
         task_count=task_count,
@@ -330,11 +367,13 @@ def run_live_benchmark(
             predictions_path=evolved_predictions_path,
             run_id="evolved-graph-run",
             dataset_name=dataset_name,
+            max_workers=max(1, harness_max_workers),
         ),
         harness_command_baseline=swebench_eval_command(
             predictions_path=baseline_predictions_path,
             run_id="single-agent-baseline-run",
             dataset_name=dataset_name,
+            max_workers=max(1, harness_max_workers),
         ),
         evolved_accuracy=evolved_accuracy,
         baseline_accuracy=baseline_accuracy,
@@ -343,6 +382,13 @@ def run_live_benchmark(
         evolved_harness_results_path=evolved_harness_results_path,
         baseline_harness_results_path=baseline_harness_results_path,
         harness_error=harness_error,
+        harness_supported=harness_supported,
+        evaluation_mode=evaluation_mode,
+        harness_unavailable_reason=harness_unavailable_reason,
+        evolved_reference_exact_match_rate=evolved_reference_exact_match_rate,
+        baseline_reference_exact_match_rate=baseline_reference_exact_match_rate,
+        evolved_avg_patch_similarity=evolved_avg_patch_similarity,
+        baseline_avg_patch_similarity=baseline_avg_patch_similarity,
         case_results=case_results,
         case_details=case_details,
     )

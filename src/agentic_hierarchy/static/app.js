@@ -184,6 +184,18 @@ function renderSummary() {
   const summary = state.benchmark;
   const evolvedAccuracy = summary.evolved_accuracy == null ? "N/A" : `${(summary.evolved_accuracy * 100).toFixed(2)}%`;
   const baselineAccuracy = summary.baseline_accuracy == null ? "N/A" : `${(summary.baseline_accuracy * 100).toFixed(2)}%`;
+  const evolvedProxyExact =
+    summary.evolved_reference_exact_match_rate == null
+      ? "N/A"
+      : `${(summary.evolved_reference_exact_match_rate * 100).toFixed(2)}%`;
+  const baselineProxyExact =
+    summary.baseline_reference_exact_match_rate == null
+      ? "N/A"
+      : `${(summary.baseline_reference_exact_match_rate * 100).toFixed(2)}%`;
+  const evolvedProxySimilarity =
+    summary.evolved_avg_patch_similarity == null ? "N/A" : `${(summary.evolved_avg_patch_similarity * 100).toFixed(2)}%`;
+  const baselineProxySimilarity =
+    summary.baseline_avg_patch_similarity == null ? "N/A" : `${(summary.baseline_avg_patch_similarity * 100).toFixed(2)}%`;
   summaryCards.innerHTML = `
     <div class="summary-card">
       <span>Task count</span>
@@ -205,8 +217,28 @@ function renderSummary() {
       <span>Baseline accuracy</span>
       <strong>${baselineAccuracy}</strong>
     </div>
+    <div class="summary-card">
+      <span>Evolved exact patch match (proxy)</span>
+      <strong>${evolvedProxyExact}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Baseline exact patch match (proxy)</span>
+      <strong>${baselineProxyExact}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Evolved avg patch similarity (proxy)</span>
+      <strong>${evolvedProxySimilarity}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Baseline avg patch similarity (proxy)</span>
+      <strong>${baselineProxySimilarity}</strong>
+    </div>
   `;
   benchmarkSummary.innerHTML = `
+    <div class="comparison-row">
+      <span>Evaluation mode</span>
+      <strong>${summary.evaluation_mode || "swebench_harness"}</strong>
+    </div>
     <div class="comparison-row">
       <span>Evolved predictions</span>
       <strong>${summary.evolved_predictions_path}</strong>
@@ -216,9 +248,18 @@ function renderSummary() {
       <strong>${summary.baseline_predictions_path}</strong>
     </div>
     <div class="comparison-row">
-      <span>Harness command</span>
+      <span>Harness command (evolved)</span>
       <strong>${summary.harness_command_evolved}</strong>
     </div>
+    <div class="comparison-row">
+      <span>Harness command (baseline)</span>
+      <strong>${summary.harness_command_baseline}</strong>
+    </div>
+    ${
+      summary.harness_unavailable_reason
+        ? `<div class="comparison-row"><span>Harness note</span><strong>${summary.harness_unavailable_reason}</strong></div>`
+        : ""
+    }
     ${
       summary.harness_error
         ? `<div class="comparison-row"><span>Harness error</span><strong>${summary.harness_error}</strong></div>`

@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -110,24 +111,25 @@ def prepare_task_repositories(
         repo_key = repo_name.replace("/", "__")
         local_repo = repos_root / repo_key
         clone_url = f"https://github.com/{repo_name}.git"
-        if not _is_git_repo(local_repo):
-            _clone_repo(clone_url=clone_url, local_repo=local_repo)
+        with _repo_lock(repos_root, repo_key):
+            if not _is_git_repo(local_repo):
+                _clone_repo(clone_url=clone_url, local_repo=local_repo)
 
-        target_commit = getattr(task, "base_commit", None)
-        if target_commit is None and isinstance(task, dict):
-            target_commit = task.get("base_commit")
-        if target_commit and current_commit_by_repo.get(repo_key) != target_commit:
-            if not _has_commit(local_repo, target_commit):
-                try:
-                    _run(["git", "fetch", "origin", target_commit], cwd=local_repo)
-                except RuntimeError:
-                    _run(["git", "fetch", "--all", "--tags"], cwd=local_repo)
-            _checkout_commit_with_recovery(
-                local_repo=local_repo,
-                target_commit=target_commit,
-                clone_url=clone_url,
-            )
-            current_commit_by_repo[repo_key] = target_commit
+            target_commit = getattr(task, "base_commit", None)
+            if target_commit is None and isinstance(task, dict):
+                target_commit = task.get("base_commit")
+            if target_commit and current_commit_by_repo.get(repo_key) != target_commit:
+                if not _has_commit(local_repo, target_commit):
+                    try:
+                        _run(["git", "fetch", "origin", target_commit], cwd=local_repo)
+                    except RuntimeError:
+                        _run(["git", "fetch", "--all", "--tags"], cwd=local_repo)
+                _checkout_commit_with_recovery(
+                    local_repo=local_repo,
+                    target_commit=target_commit,
+                    clone_url=clone_url,
+                )
+                current_commit_by_repo[repo_key] = target_commit
         repo_path = str(local_repo.resolve())
         if isinstance(task, dict):
             task["repo_path"] = repo_path
@@ -229,6 +231,12 @@ def _run(command: list[str], cwd: Path | str | None = None) -> subprocess.Comple
     if completed.returncode != 0:
         stderr_tail = (completed.stderr or "")[-2000:]
         stdout_tail = (completed.stdout or "")[-2000:]
+        combined = f"{stderr_tail}\n{stdout_tail}"
+        if "No module named 'resource'" in combined:
+            raise RuntimeError(
+                "SWE-bench harness requires POSIX/Unix runtime and is not supported on native Windows Python "
+                "because the `resource` module is unavailable. Run harness in WSL2/Linux or Docker."
+            )
         raise RuntimeError(
             f"Command failed ({completed.returncode}): {' '.join(command)}\n"
             f"stderr:\n{stderr_tail}\nstdout:\n{stdout_tail}"
@@ -243,22 +251,37 @@ def _clone_repo(*, clone_url: str, local_repo: Path, filtered: bool = True) -> N
         _force_remove_dir(local_repo)
     local_repo.parent.mkdir(parents=True, exist_ok=True)
 
-    clone_command = ["git", "clone"]
+    staging_repo = local_repo.parent / f"{local_repo.name}.staging-{uuid.uuid4().hex[:8]}"
+    if staging_repo.exists():
+        _force_remove_dir(staging_repo)
+
+    clone_command = ["git", "clone", "--no-checkout"]
     if filtered:
         clone_command.extend(["--filter=blob:none"])
-    clone_command.extend([clone_url, str(local_repo)])
+    clone_command.extend([clone_url, str(staging_repo)])
     last_error: RuntimeError | None = None
     for attempt in range(1, 3):
         try:
             if local_repo.exists():
                 _force_remove_dir(local_repo)
+            if staging_repo.exists():
+                _force_remove_dir(staging_repo)
             _run(clone_command)
+            os.replace(str(staging_repo), str(local_repo))
             return
         except RuntimeError as exc:
             last_error = exc
             # Clean up partially cloned directories before retry.
             if local_repo.exists():
                 _force_remove_dir(local_repo)
+            if staging_repo.exists():
+                _force_remove_dir(staging_repo)
+            if attempt == 2:
+                break
+        except OSError as exc:
+            last_error = RuntimeError(str(exc))
+            if staging_repo.exists():
+                _force_remove_dir(staging_repo)
             if attempt == 2:
                 break
     raise RuntimeError(
@@ -326,6 +349,15 @@ def _rev_parse(repo_dir: Path, ref: str) -> str | None:
     if completed.returncode != 0:
         return None
     return (completed.stdout or "").strip() or None
+
+
+def _repo_lock(repos_root: Path, repo_key: str):
+    from filelock import FileLock
+
+    lock_dir = repos_root / ".locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_dir / f"{repo_key}.lock"
+    return FileLock(str(lock_file), timeout=1800)
 
 
 def _force_remove_dir(path: Path) -> None:
